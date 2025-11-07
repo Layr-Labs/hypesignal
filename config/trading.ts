@@ -18,15 +18,15 @@ function parseListEnv(value: string | undefined): string[] {
 }
 
 const baseInfluencers = [
-  // 'blknoiz06',
-  // 'dabit3',
+  'blknoiz06',
+  'dabit3',
   'trading_axe',
-  // 'notthreadguy',
-  // 'gwartygwart',
-  // 'tradermayne',
-  // 'loomdart',
-  // 'CryptoHayes',
-  // 'divine_economy'
+  'notthreadguy',
+  'gwartygwart',
+  'tradermayne',
+  'loomdart',
+  'CryptoHayes',
+  'divine_economy'
 ];
 
 const defaultMaxTradeUsd = parseNumberEnv(process.env.MAX_TRADE_AMOUNT_USD, 30);
