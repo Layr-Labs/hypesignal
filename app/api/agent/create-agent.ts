@@ -44,14 +44,14 @@ export async function createAgent(): Promise<Agent> {
     return agent;
   }
 
-  if (!process.env.EIGENAI_API_KEY) {
-    throw new Error("I need an EIGENAI_API_KEY in your .env file to power my intelligence.");
+  if (!process.env.EIGENAI_API_KEY && !process.env.OPENAI_API_KEY) {
+    throw new Error("I need either an EIGENAI_API_KEY or an OPENAI_API_KEY in your .env file to power my intelligence.");
   }
 
   const { agentkit, walletProvider } = await prepareAgentkitAndWalletProvider();
 
   try {
-    // Initialize LLM: Using Eigen AI gemma model
+    // Initialize LLM: Prefer Eigen AI when available, otherwise fall back to OpenAI
     const model = eigenai("gemma-3-27b-it-q4");
 
     // Initialize Agent

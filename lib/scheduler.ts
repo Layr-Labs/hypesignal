@@ -1,67 +1,124 @@
-import * as cron from 'node-cron';
 import { database } from './database';
-import { executeSell } from './trading';
+import { HttpTransport, InfoClient } from '@nktkas/hyperliquid';
 import { TRADING_CONFIG } from '@/config/trading';
+import { privateKeyToAccount } from 'viem/accounts';
+import type { PositionSummary } from '@/types/tradingStatus';
 
 export class TradingScheduler {
-  private sellCheckJob: cron.ScheduledTask | null = null;
+  private priceInfoClientPromise: Promise<InfoClient> | null = null;
+  private hyperliquidAddress: string | null = null;
 
   start() {
-    console.log('Starting trading scheduler...');
-
-    // Check for positions to sell every 5 minutes
-    this.sellCheckJob = cron.schedule('*/5 * * * *', async () => {
-      await this.checkPositionsToSell();
-    });
-
-    console.log('Trading scheduler started - checking for positions to sell every 5 minutes');
+    console.log('Trading scheduler initialized (auto-sell disabled).');
   }
 
   stop() {
-    if (this.sellCheckJob) {
-      this.sellCheckJob.stop();
-      this.sellCheckJob = null;
-      console.log('Trading scheduler stopped');
-    }
+    console.log('Trading scheduler stopped.');
   }
 
-  private async checkPositionsToSell() {
+  private async getPriceInfoClient() {
+    if (!this.priceInfoClientPromise) {
+      this.priceInfoClientPromise = (async () => {
+        const transport = new HttpTransport({
+          isTestnet: TRADING_CONFIG.hyperliquid.environment !== 'mainnet',
+          fetchOptions: { keepalive: false }
+        });
+        return new InfoClient({ transport });
+      })();
+    }
+    return this.priceInfoClientPromise;
+  }
+
+  private getHyperliquidAddress(): string | null {
+    if (this.hyperliquidAddress !== null) {
+      return this.hyperliquidAddress;
+    }
+
+    const privateKey = process.env.HYPERLIQUID_PRIVATE_KEY;
+    if (!privateKey) {
+      console.warn('HYPERLIQUID_PRIVATE_KEY is not set; unable to sync remote positions.');
+      this.hyperliquidAddress = null;
+      return null;
+    }
+
     try {
-      const holdingPositions = await database.getHoldingPositions();
-
-      if (holdingPositions.length === 0) {
-        return; // No positions to check
-      }
-
-      console.log(`Checking ${holdingPositions.length} positions for sell conditions`);
-
-      for (const position of holdingPositions) {
-        const holdDurationMs = TRADING_CONFIG.holdDurationHours * 60 * 60 * 1000;
-        const timeSincePurchase = Date.now() - position.purchaseTime.getTime();
-
-        if (timeSincePurchase >= holdDurationMs) {
-          console.log(`Position ${position.id} (${position.token}) has reached ${TRADING_CONFIG.holdDurationHours}h hold time, executing sell`);
-
-          try {
-            await executeSell(position);
-            console.log(`Successfully sold position ${position.id}`);
-          } catch (error) {
-            console.error(`Failed to sell position ${position.id}:`, error);
-          }
-        } else {
-          const remainingHours = (holdDurationMs - timeSincePurchase) / (60 * 60 * 1000);
-          console.log(`Position ${position.id} (${position.token}) has ${remainingHours.toFixed(1)}h remaining before sell`);
-        }
-      }
+      const normalized = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
+      const account = privateKeyToAccount(normalized as `0x${string}`);
+      this.hyperliquidAddress = account.address;
+      return this.hyperliquidAddress;
     } catch (error) {
-      console.error('Error checking positions to sell:', error);
+      console.error('Failed to derive Hyperliquid address from private key:', error);
+      this.hyperliquidAddress = null;
+      return null;
     }
   }
 
-  // Method to manually trigger position checks (useful for testing)
-  async manualCheck() {
-    console.log('Running manual position check...');
-    await this.checkPositionsToSell();
+  private async getMarketPrices(tokens: string[]) {
+    const uniqueSymbols = Array.from(new Set(tokens.map(token => token.toUpperCase())));
+    if (!uniqueSymbols.length) {
+      return {};
+    }
+
+    try {
+      const infoClient = await this.getPriceInfoClient();
+      const mids = await infoClient.allMids();
+
+      return uniqueSymbols.reduce<Record<string, number>>((acc, symbol) => {
+        const price = mids?.[symbol];
+        if (price !== undefined) {
+          acc[symbol] = typeof price === 'string' ? parseFloat(price) : Number(price);
+        }
+        return acc;
+      }, {});
+    } catch (error) {
+      console.error('Error fetching market prices from Hyperliquid:', error);
+      return {};
+    }
+  }
+
+  private async getRemotePositions(existingTokens: Set<string>): Promise<PositionSummary[]> {
+    const address = this.getHyperliquidAddress();
+    if (!address) {
+      return [];
+    }
+
+    try {
+      const infoClient = await this.getPriceInfoClient();
+      const state = await infoClient.clearinghouseState({ user: address });
+      const assetPositions = state?.assetPositions ?? [];
+
+      const syncedPositions = assetPositions
+        .map(({ position }) => {
+          const token = position.coin.toUpperCase();
+          if (existingTokens.has(token)) {
+            return null;
+          }
+
+          const size = Number(position.szi);
+          if (!Number.isFinite(size) || size === 0) {
+            return null;
+          }
+
+          existingTokens.add(token);
+
+          return {
+            id: `hyperliquid-${token}`,
+            token,
+            influencer: 'synced',
+            purchaseTime: null,
+            amount: size,
+            hoursHeld: null,
+            marketPriceUsd: null,
+            source: 'synced' as const
+          };
+        })
+        .filter((pos): pos is PositionSummary => Boolean(pos));
+
+      return syncedPositions;
+    } catch (error) {
+      console.error('Error syncing Hyperliquid positions:', error);
+      return [];
+    }
   }
 
   // Get status of current positions
@@ -69,23 +126,36 @@ export class TradingScheduler {
     try {
       const positions = await database.getHoldingPositions();
 
-      const summary = {
-        totalPositions: positions.length,
-        totalValue: 0,
-        positions: positions.map(pos => ({
+      const basePositions: PositionSummary[] = positions.map(pos => {
+        const hoursHeld = (Date.now() - pos.purchaseTime.getTime()) / (60 * 60 * 1000);
+        return {
           id: pos.id,
-          token: pos.token,
+          token: pos.token.toUpperCase(),
           influencer: pos.influencer,
-          purchaseTime: pos.purchaseTime,
+          purchaseTime: pos.purchaseTime?.toISOString?.() ?? null,
           amount: pos.amount,
-          hoursHeld: (Date.now() - pos.purchaseTime.getTime()) / (60 * 60 * 1000),
-          hoursRemaining: Math.max(0, TRADING_CONFIG.holdDurationHours - (Date.now() - pos.purchaseTime.getTime()) / (60 * 60 * 1000))
-        }))
+          hoursHeld,
+          profileImageUrl: pos.profileImageUrl,
+          marketPriceUsd: null,
+          source: 'local'
+        };
+      });
+
+      const tokenSet = new Set(basePositions.map(pos => pos.token.toUpperCase()));
+      const syncedPositions = await this.getRemotePositions(tokenSet);
+      const combinedPositions = [...basePositions, ...syncedPositions];
+
+      const priceMap = await this.getMarketPrices(combinedPositions.map(pos => pos.token));
+      const enrichedPositions = combinedPositions.map(pos => ({
+        ...pos,
+        marketPriceUsd: priceMap[pos.token.toUpperCase()] ?? pos.marketPriceUsd ?? null
+      }));
+
+      return {
+        totalPositions: enrichedPositions.length,
+        totalValue: enrichedPositions.reduce((total, pos) => total + (pos.amount || 0), 0),
+        positions: enrichedPositions
       };
-
-      summary.totalValue = summary.positions.reduce((total, pos) => total + (pos.amount || 0), 0);
-
-      return summary;
     } catch (error) {
       console.error('Error getting positions summary:', error);
       throw error;

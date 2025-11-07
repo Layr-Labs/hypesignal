@@ -4,6 +4,7 @@ import { database } from './database';
 import { executeTrade } from './trading';
 import { TRADING_CONFIG } from '@/config/trading';
 import { generateId } from 'ai';
+import { ToastService } from './toastService';
 
 export class TradingAgent {
   private isRunning: boolean = false;
@@ -176,6 +177,7 @@ export class TradingAgent {
     tweet: string;
     influencer: string;
     tweetId: string;
+    profileImageUrl?: string;
   }) {
     try {
       console.log(`🧪 TEST TRADE: Simulating purchase of ${params.token} with 1 USDC`);
@@ -189,6 +191,7 @@ export class TradingAgent {
         purchaseTime: new Date(),
         tweet: params.tweet,
         influencer: params.influencer,
+        profileImageUrl: params.profileImageUrl,
         status: 'holding' as const
       };
 
@@ -197,6 +200,13 @@ export class TradingAgent {
 
       // Save the test position
       await database.savePosition(testPosition);
+
+      ToastService.addTradeBuyToast({
+        token: testPosition.token,
+        amount: `${testPosition.amount.toFixed(4)} ${testPosition.token} (simulated)`,
+        influencer: params.influencer,
+        price: testPosition.purchasePrice.toFixed(2)
+      });
 
       console.log(`✅ Test position created: ${testPosition.id}`);
       console.log(`   Token: ${testPosition.token}`);

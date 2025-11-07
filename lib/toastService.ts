@@ -67,7 +67,7 @@ export class ToastService {
     return this.addToast({
       type: 'trade-buy',
       title: `Bought ${data.token}`,
-      message: `Purchased ${data.amount} ETH worth of ${data.token}`,
+      message: `Purchased ${data.amount} of ${data.token}`,
       duration: 8000, // Longer duration for trades
       data: {
         token: data.token,

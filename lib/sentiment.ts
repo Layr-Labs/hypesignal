@@ -10,6 +10,36 @@ export interface SentimentResult {
   tokens: string[];
 }
 
+type TokenSentiment = 'bullish' | 'bearish' | 'neutral';
+
+interface TokenSignal {
+  token: string;
+  sentiment: TokenSentiment;
+  conviction: number;
+  reasoning: string;
+  evidence?: string;
+  mentionType?: 'cashtag' | 'ticker' | 'project' | 'narrative' | 'other';
+}
+
+function cleanJsonResponse(rawText: string): string {
+  let cleaned = rawText.trim();
+  if (cleaned.startsWith('```json')) {
+    cleaned = cleaned.replace(/```json\s*/i, '').replace(/```$/, '').trim();
+  } else if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/```\s*/i, '').replace(/```$/, '').trim();
+  }
+  return cleaned;
+}
+
+function extractJsonArray(rawText: string): string | null {
+  const cleaned = cleanJsonResponse(rawText);
+  if (cleaned.startsWith('[') && cleaned.endsWith(']')) {
+    return cleaned;
+  }
+  const match = cleaned.match(/\[[\s\S]*]/);
+  return match ? match[0] : null;
+}
+
 export async function analyzeTweetSentiment(tweetText: string): Promise<SentimentResult> {
   console.log('🔍 [SENTIMENT] Starting sentiment analysis...');
   console.log('🔍 [SENTIMENT] Tweet text:', `"${tweetText}"`);
@@ -28,6 +58,7 @@ Rules:
 2. Provide confidence score (0-100)
 3. Give brief reasoning (1-2 sentences)
 4. Focus on trading implications, not general crypto discussion
+5. IMPORTANT: Inside JSON string values, never use raw double quotes. Replace any literal quotes with single quotes or escape them (e.g., \"bullish\").
 
 Response format (JSON):
 {
@@ -48,13 +79,7 @@ Response format (JSON):
     console.log('🔍 [SENTIMENT] Eigen AI response:', text);
 
     // Clean up the response - remove markdown formatting if present
-    let cleanedText = text.trim();
-    if (cleanedText.startsWith('```json')) {
-      cleanedText = cleanedText.replace(/```json\s*/, '').replace(/```$/, '').trim();
-    }
-    if (cleanedText.startsWith('```')) {
-      cleanedText = cleanedText.replace(/```\s*/, '').replace(/```$/, '').trim();
-    }
+    const cleanedText = cleanJsonResponse(text);
 
     console.log('🔍 [SENTIMENT] Cleaned response:', cleanedText);
 
@@ -151,13 +176,7 @@ Examples:
     console.log('🔍 [PROJECTS] Raw Eigen AI response:', text);
 
     // Clean up the response - remove markdown formatting if present
-    let cleanedText = text.trim();
-    if (cleanedText.startsWith('```json')) {
-      cleanedText = cleanedText.replace(/```json\s*/, '').replace(/```$/, '').trim();
-    }
-    if (cleanedText.startsWith('```')) {
-      cleanedText = cleanedText.replace(/```\s*/, '').replace(/```$/, '').trim();
-    }
+    const cleanedText = cleanJsonResponse(text);
 
     console.log('🔍 [PROJECTS] Cleaned response:', cleanedText);
 
@@ -179,12 +198,29 @@ Examples:
 /**
  * Map project names to their trading tickers using LLM
  */
+const GENERIC_PROJECT_KEYWORDS = new Set([
+  'crypto',
+  'cryptocurrency',
+  'cryptocurrencies',
+  'market',
+  'markets',
+  'token',
+  'tokens',
+  'project',
+  'projects',
+  'defi',
+  'blockchain',
+  'web3'
+]);
+
 async function mapProjectsToTickers(projects: string[]): Promise<string[]> {
   console.log('🔍 [TICKERS] Starting project-to-ticker mapping...');
   console.log('🔍 [TICKERS] Projects to map:', projects);
 
-  if (projects.length === 0) {
-    console.log('🔍 [TICKERS] No projects to map, returning empty array');
+  const filteredProjects = projects.filter(project => !GENERIC_PROJECT_KEYWORDS.has(project.toLowerCase()));
+
+  if (filteredProjects.length === 0) {
+    console.log('🔍 [TICKERS] No specific projects to map, returning empty array');
     return [];
   }
 
@@ -219,7 +255,7 @@ IMPORTANT: Do NOT return BTC or Bitcoin - skip Bitcoin-related projects.`
         },
         {
           role: 'user',
-          content: `Map these projects to tickers: ${JSON.stringify(projects)}`
+          content: `Map these projects to tickers: ${JSON.stringify(filteredProjects)}`
         }
       ],
       maxTokens: 200,
@@ -228,18 +264,14 @@ IMPORTANT: Do NOT return BTC or Bitcoin - skip Bitcoin-related projects.`
 
     console.log('🔍 [TICKERS] Raw Eigen AI response:', text);
 
-    // Clean up the response - remove markdown formatting if present
-    let cleanedText = text.trim();
-    if (cleanedText.startsWith('```json')) {
-      cleanedText = cleanedText.replace(/```json\s*/, '').replace(/```$/, '').trim();
-    }
-    if (cleanedText.startsWith('```')) {
-      cleanedText = cleanedText.replace(/```\s*/, '').replace(/```$/, '').trim();
+    const jsonSegment = extractJsonArray(text);
+    if (!jsonSegment) {
+      throw new SyntaxError('No JSON array found in response');
     }
 
-    console.log('🔍 [TICKERS] Cleaned response:', cleanedText);
+    console.log('🔍 [TICKERS] Cleaned response:', jsonSegment);
 
-    const tickers = JSON.parse(cleanedText) as string[];
+    const tickers = JSON.parse(jsonSegment) as string[];
     const validTickers = Array.isArray(tickers) ? tickers.filter(t => t && t.length > 0) : [];
 
     console.log('🔍 [TICKERS] Final mapped tickers:', validTickers);
@@ -251,6 +283,93 @@ IMPORTANT: Do NOT return BTC or Bitcoin - skip Bitcoin-related projects.`
     console.error('❌ [TICKERS] Error mapping projects to tickers:', error);
     console.log('🔍 [TICKERS] Returning empty array due to error');
     return [];
+  }
+}
+
+async function deriveTokenSignals(tweetText: string, seedTokens: string[]): Promise<TokenSignal[]> {
+  console.log('🔍 [SIGNALS] Deriving token-level sentiment signals...');
+  console.log('🔍 [SIGNALS] Seed tokens:', seedTokens.length ? seedTokens.join(', ') : 'none');
+
+  const seedHint = seedTokens.length ? seedTokens.map(t => t.toUpperCase()).join(', ') : 'none';
+
+  try {
+    const { text } = await generateText({
+      model: eigenai('gemma-3-27b-it-q4'),
+      temperature: 0.15,
+      maxTokens: 450,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a meticulous crypto trading analyst. Read the tweet and extract only tokens/projects that the author is explicitly bullish on. Ignore vague hype and generic market commentary.
+
+Requirements:
+1. A token/project must be clearly referenced (cashtag, ticker, or full name).
+2. Only include the token if the sentiment is bullish with supporting language (e.g., "buy", "going higher", "strong", "accumulating"). If sentiment is mixed or unclear, classify as neutral or omit.
+3. Output JSON matching:
+{
+  "signals": [
+    {
+      "token": "SOL",
+      "sentiment": "bullish|bearish|neutral",
+      "conviction": 0-100,
+      "reasoning": "short explanation referencing the tweet",
+      "evidence": "exact quote or paraphrase from tweet",
+      "mentionType": "cashtag|ticker|project|narrative"
+    }
+  ],
+  "notes": "brief summary"
+}
+4. Use uppercase ticker symbols. If only the project name is given, map it to the most common ticker (e.g., Solana -> SOL).
+5. Exclude Bitcoin entirely (return no signal for BTC/Bitcoin).`
+        },
+        {
+          role: 'user',
+          content: `Tweet:
+"""
+${tweetText}
+"""
+Detected tickers from cashtags or heuristics: ${seedHint}
+
+Return the JSON payload only.`
+        }
+      ]
+    });
+
+    const cleanedText = cleanJsonResponse(text);
+    console.log('🔍 [SIGNALS] Raw response:', cleanedText);
+
+    const parsed = JSON.parse(cleanedText) as { signals?: TokenSignal[] };
+    const signals = Array.isArray(parsed?.signals) ? parsed.signals : [];
+
+    const normalizedSignals = signals
+      .map(signal => {
+        const token = (signal.token ?? '').toUpperCase().trim();
+        const sentiment = (signal.sentiment ?? '').toLowerCase() as TokenSentiment;
+        const conviction = Number(signal.conviction ?? 0);
+        return {
+          token,
+          sentiment: ['bullish', 'bearish', 'neutral'].includes(sentiment) ? sentiment : 'neutral',
+          conviction: Number.isFinite(conviction) ? conviction : 0,
+          reasoning: signal.reasoning ?? '',
+          evidence: signal.evidence ?? '',
+          mentionType: signal.mentionType ?? 'other'
+        } as TokenSignal;
+      })
+      .filter(signal => signal.token.length > 0);
+
+    console.log('🔍 [SIGNALS] Normalized signals:', normalizedSignals);
+    return normalizedSignals;
+  } catch (error) {
+    console.error('❌ [SIGNALS] Failed to derive token signals:', error);
+
+    // fallback to seed tokens as neutral references
+    return seedTokens.map(token => ({
+      token: token.toUpperCase(),
+      sentiment: 'neutral',
+      conviction: 0,
+      reasoning: 'Fallback after signal extraction failure',
+      mentionType: 'cashtag'
+    }));
   }
 }
 
@@ -313,55 +432,72 @@ export async function extractTokenMentions(tweetText: string): Promise<string[]>
 
 export async function shouldTrade(tweetText: string, tokens: string[]): Promise<{ shouldTrade: boolean; reason: string; tokens: string[]; sentimentData?: SentimentResult }> {
   console.log('🔍 [TRADE_DECISION] ===== STARTING TRADE DECISION =====');
-  console.log('🔍 [TRADE_DECISION] Input tokens:', tokens);
+  console.log('🔍 [TRADE_DECISION] Seed tokens:', tokens.length ? tokens : 'none');
 
   const sentimentResult = await analyzeTweetSentiment(tweetText);
+  const tokenSignals = await deriveTokenSignals(tweetText, tokens);
 
-  console.log('🔍 [TRADE_DECISION] Sentiment analysis complete, checking trading criteria...');
+  console.log('🔍 [TRADE_DECISION] Aggregated sentiment:', sentimentResult.sentiment, sentimentResult.confidence);
+  console.log('🔍 [TRADE_DECISION] Token signals:', tokenSignals);
 
-  if (tokens.length === 0) {
-    console.log('🔍 [TRADE_DECISION] ❌ No tradeable tokens mentioned - NO TRADE');
+  if (!tokenSignals.length) {
+    console.log('🔍 [TRADE_DECISION] ❌ No explicit token mentions with sentiment - NO TRADE');
     return {
       shouldTrade: false,
-      reason: 'No tradeable tokens mentioned',
+      reason: 'No confident token mentions were found in the tweet',
       tokens: [],
       sentimentData: sentimentResult
     };
   }
 
-  console.log('🔍 [TRADE_DECISION] ✅ Tokens found, checking sentiment...');
+  const overallPositive = sentimentResult.isPositive && sentimentResult.sentiment !== 'bearish';
 
-  if (!sentimentResult.isPositive) {
-    console.log(`🔍 [TRADE_DECISION] ❌ Sentiment not positive - NO TRADE`);
-    console.log(`🔍 [TRADE_DECISION]    Sentiment: ${sentimentResult.sentiment}`);
-    console.log(`🔍 [TRADE_DECISION]    Confidence: ${sentimentResult.confidence}%`);
-    console.log(`🔍 [TRADE_DECISION]    Required: bullish with ≥${TRADING_CONFIG.minimumConfidence}% confidence`);
+  const bullishSignals = tokenSignals.filter(signal =>
+    signal.sentiment === 'bullish' && signal.conviction >= TRADING_CONFIG.minimumConfidence
+  );
+
+  if (!bullishSignals.length) {
+    const strongest = tokenSignals.reduce<TokenSignal | null>((best, current) => {
+      if (!best || current.conviction > best.conviction) return current;
+      return best;
+    }, null);
+
+    const reason = strongest
+      ? `No bullish conviction. Strongest signal was ${strongest.token} (${strongest.sentiment} ${strongest.conviction}): ${strongest.reasoning}`
+      : 'No bullish conviction across tokens';
+
+    return {
+      shouldTrade: false,
+      reason,
+      tokens: [],
+      sentimentData: sentimentResult
+    };
+  }
+
+  const tokenOverride = !overallPositive && bullishSignals.length > 0 && sentimentResult.confidence === 0;
+
+  if (!overallPositive && !tokenOverride) {
+    console.log('🔍 [TRADE_DECISION] ❌ Overall tweet sentiment not bullish enough - NO TRADE');
     return {
       shouldTrade: false,
       reason: `${sentimentResult.sentiment.toUpperCase()} sentiment (${sentimentResult.confidence}% confidence): ${sentimentResult.reasoning}`,
-      tokens,
+      tokens: [],
       sentimentData: sentimentResult
     };
   }
 
-  // Additional safety check for clearly bearish signals
-  if (sentimentResult.sentiment === 'bearish') {
-    console.log('🔍 [TRADE_DECISION] ❌ Bearish sentiment detected - NO TRADE');
-    return {
-      shouldTrade: false,
-      reason: `Bearish sentiment detected: ${sentimentResult.reasoning}`,
-      tokens,
-      sentimentData: sentimentResult
-    };
-  }
+  const finalTokens = Array.from(new Set(bullishSignals.map(signal => signal.token)));
+  const reasonDetails = bullishSignals
+    .map(signal => `${signal.token} (${signal.conviction}%): ${signal.reasoning}`)
+    .join(' | ');
 
-  console.log('🔍 [TRADE_DECISION] ✅ All criteria met - TRADE APPROVED');
+  console.log('🔍 [TRADE_DECISION] ✅ Bullish tokens approved:', finalTokens);
   console.log('🔍 [TRADE_DECISION] ===== TRADE DECISION COMPLETE =====');
 
   return {
     shouldTrade: true,
-    reason: `BULLISH sentiment (${sentimentResult.confidence}% confidence): ${sentimentResult.reasoning}`,
-    tokens,
+    reason: `Bullish signals: ${reasonDetails}`,
+    tokens: finalTokens,
     sentimentData: sentimentResult
   };
 }

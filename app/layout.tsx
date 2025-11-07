@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import FloatingParticles from "./components/FloatingParticles";
-import PulseLogo from "./components/PulseLogo";
+import HypeSignalLogo from "./components/HypeSignalLogo";
 import { ToastProvider } from "./components/Toast";
 
 /**
  * Metadata for the page
  */
 export const metadata: Metadata = {
-  title: "Pulse - AI Trading Agent",
+  title: "HypeSignal - AI Trading Agent",
   description: "Advanced on-chain trading agent powered by AI and real-time market intelligence",
 };
 
@@ -65,10 +65,10 @@ export default function RootLayout({
           <div className="w-full max-w-7xl mx-auto px-6 py-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <PulseLogo className="w-8 h-8" />
+                <HypeSignalLogo className="w-8 h-8" />
                 <div className="flex flex-col">
                   <h1 className="text-white text-2xl font-bold tracking-widest">
-                    PULSE
+                    HYPESIGNAL
                   </h1>
                 </div>
               </div>
@@ -88,7 +88,7 @@ export default function RootLayout({
 
                     {/* Text with gradient */}
                     <span className="text-sm font-medium bg-gradient-to-r from-emerald-300 via-blue-300 to-purple-300 bg-clip-text text-transparent tracking-wide">
-                      AI-Powered Trading Agent
+                     HyperLiquid Trading Agent
                     </span>
 
                     {/* Subtle shine effect */}

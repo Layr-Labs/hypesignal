@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, createContext, useContext, ReactNode, useRef, useCallback } from 'react';
 
 export interface ToastData {
   id: string;
@@ -41,6 +41,7 @@ interface ToastProviderProps {
 
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastData[]>([]);
+  const lastFetchRef = useRef<number>(0);
 
   const addToast = (toastData: Omit<ToastData, 'id'>) => {
     const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -60,40 +61,47 @@ export function ToastProvider({ children }: ToastProviderProps) {
 
   // Simplified approach - only poll when trading is active
   // We'll check for new toasts only when needed instead of continuous polling
-  const checkForNewToasts = async () => {
+  const checkForNewToasts = useCallback(async () => {
     try {
-      const response = await fetch('/api/toasts');
-      if (response.ok) {
-        const data = await response.json();
+      const sinceParam = lastFetchRef.current ? `?since=${lastFetchRef.current}` : '';
+      const response = await fetch(`/api/toasts${sinceParam}`, { cache: 'no-store' });
+      if (!response.ok) return;
 
-        data.toasts.forEach((serverToast: any) => {
-          const clientToast: ToastData = {
-            id: serverToast.id,
-            type: serverToast.type,
-            title: serverToast.title,
-            message: serverToast.message,
-            duration: serverToast.duration || 6000,
-            data: serverToast.data
-          };
+      const data = await response.json();
 
-          setToasts(prev => {
-            // Avoid duplicates
-            if (prev.find(t => t.id === clientToast.id)) {
-              return prev;
-            }
-            return [...prev, clientToast];
-          });
+      data.toasts.forEach((serverToast: any) => {
+        const clientToast: ToastData = {
+          id: serverToast.id,
+          type: serverToast.type,
+          title: serverToast.title,
+          message: serverToast.message,
+          duration: serverToast.duration || 6000,
+          data: serverToast.data
+        };
 
-          // Auto remove after duration
-          setTimeout(() => {
-            removeToast(clientToast.id);
-          }, clientToast.duration);
+        setToasts(prev => {
+          if (prev.find(t => t.id === clientToast.id)) {
+            return prev;
+          }
+          return [...prev, clientToast];
         });
-      }
+
+        setTimeout(() => {
+          removeToast(clientToast.id);
+        }, clientToast.duration);
+      });
+
+      lastFetchRef.current = data.timestamp || Date.now();
     } catch (error) {
       console.error('Failed to check for toasts:', error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    checkForNewToasts();
+    const interval = setInterval(checkForNewToasts, 5000);
+    return () => clearInterval(interval);
+  }, [checkForNewToasts]);
 
   const removeToast = (id: string) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));

@@ -1,4 +1,5 @@
-import { LanguageModelV1, LanguageModelV1Message, LanguageModelV1StreamPart } from '@ai-sdk/provider';
+import { createOpenAI } from '@ai-sdk/openai';
+import { LanguageModelV1, LanguageModelV1Message } from '@ai-sdk/provider';
 
 export interface EigenAIConfig {
   apiKey: string;
@@ -8,6 +9,10 @@ export interface EigenAIConfig {
 export interface EigenAIModelOptions {
   maxTokens?: number;
   temperature?: number;
+  /**
+   * Optional override for the OpenAI model to use when EigenAI is unavailable.
+   */
+  openaiModelId?: string;
 }
 
 export class EigenAIModel implements LanguageModelV1 {
@@ -139,11 +144,35 @@ export class EigenAIModel implements LanguageModelV1 {
 }
 
 export function eigenai(modelId: string, options: EigenAIModelOptions = {}) {
-  const apiKey = process.env.EIGENAI_API_KEY;
+  const eigenKey = process.env.EIGENAI_API_KEY;
 
-  if (!apiKey) {
-    throw new Error('EIGENAI_API_KEY environment variable is not set');
+  if (eigenKey) {
+    const baseURL = process.env.EIGENAI_BASE_URL
+
+    return new EigenAIModel(
+      modelId,
+      baseURL ? { apiKey: eigenKey, baseURL } : { apiKey: eigenKey },
+      options
+    );
   }
 
-  return new EigenAIModel(modelId, { apiKey }, options);
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) {
+    throw new Error('Set either EIGENAI_API_KEY or OPENAI_API_KEY in your environment');
+  }
+
+  const openaiModelId =
+    options.openaiModelId ||
+    process.env.OPENAI_FALLBACK_MODEL ||
+    process.env.OPENAI_MODEL ||
+    'gpt-4o-mini';
+
+  if (modelId !== openaiModelId) {
+    console.warn(
+      `[AI] EIGENAI_API_KEY not found. Using OpenAI model "${openaiModelId}" as a fallback for "${modelId}".`
+    );
+  }
+
+  const openai = createOpenAI({ apiKey: openaiKey });
+  return openai(openaiModelId);
 }

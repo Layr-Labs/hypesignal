@@ -24,6 +24,7 @@ class DatabaseService {
           profit REAL,
           tweet TEXT NOT NULL,
           influencer TEXT NOT NULL,
+          profile_image_url TEXT,
           status TEXT NOT NULL DEFAULT 'holding'
         )
       `);
@@ -35,6 +36,13 @@ class DatabaseService {
           processed_at TEXT NOT NULL
         )
       `);
+
+      // Ensure new columns exist for existing databases
+      this.db.run(`ALTER TABLE positions ADD COLUMN profile_image_url TEXT`, err => {
+        if (err && !err.message.includes('duplicate column')) {
+          console.error('Failed adding profile_image_url column:', err.message);
+        }
+      });
     });
   }
 
@@ -43,8 +51,8 @@ class DatabaseService {
       this.db.run(
         `INSERT INTO positions (
           id, token, amount, purchase_price, purchase_time,
-          sell_time, sell_price, profit, tweet, influencer, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          sell_time, sell_price, profit, tweet, influencer, profile_image_url, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           position.id,
           position.token,
@@ -56,6 +64,7 @@ class DatabaseService {
           position.profit,
           position.tweet,
           position.influencer,
+          position.profileImageUrl,
           position.status
         ],
         function(err) {
@@ -123,9 +132,26 @@ class DatabaseService {
               profit: row.profit,
               tweet: row.tweet,
               influencer: row.influencer,
+              profileImageUrl: row.profile_image_url ?? undefined,
               status: row.status
             }));
             resolve(positions);
+          }
+        }
+      );
+    });
+  }
+
+  async hasHoldingPosition(token: string): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        "SELECT 1 FROM positions WHERE status = 'holding' AND token = ? LIMIT 1",
+        [token],
+        (err, row) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(Boolean(row));
           }
         }
       );
@@ -166,10 +192,11 @@ class DatabaseService {
     purchaseTime: Date;
     amount: number;
     status: string;
+    profileImageUrl?: string;
   }>> {
     return new Promise((resolve, reject) => {
       this.db.all(
-        `SELECT id, token, tweet, influencer, purchase_time, amount, status
+        `SELECT id, token, tweet, influencer, purchase_time, amount, status, profile_image_url
          FROM positions
          ORDER BY purchase_time DESC
          LIMIT 10`,
@@ -185,7 +212,8 @@ class DatabaseService {
               influencer: row.influencer,
               purchaseTime: new Date(row.purchase_time),
               amount: row.amount,
-              status: row.status
+              status: row.status,
+              profileImageUrl: row.profile_image_url ?? undefined
             }));
             resolve(tweets);
           }

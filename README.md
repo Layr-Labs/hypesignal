@@ -1,4 +1,4 @@
-# Pulse 
+# HypeSignal 
 
 > Social Sentient Analysis Crypto Trading Agent Powered by EigenAI and AgentKit
 
@@ -6,12 +6,13 @@ This is an AI-powered crypto trading agent that monitors Twitter/X influencers a
 
 ## 🚀 Features
 
-- **🐦 Twitter Monitoring**: Real-time monitoring of 10 hardcoded crypto influencers
-- **🧠 Sentiment Analysis**: Advanced sentiment analysis to detect positive token mentions
-- **⚡ Automated Trading**: Automatically buys tokens when positive sentiment is detected
-- **⏰ 24-Hour Hold Strategy**: Holds positions for exactly 24 hours before selling
-- **📊 Position Tracking**: Real-time dashboard showing current positions and performance
-- **🔒 Secure Wallet Integration**: Uses Coinbase Developer Platform for secure transactions
+- **🐦 Twitter Monitoring**: Continuous monitoring of curated crypto influencers via twitterapi.io
+- **🧠 Sentiment + Token Intelligence**: LLM-powered sentiment scoring and token extraction with project→ticker mapping
+- **⚡ Automated Hyperliquid Execution**: Places IOC perp orders on Hyperliquid using your API wallet
+- **🕒 Flexible Holding**: Positions stay open until you explicitly close/sell them (no more forced 24h liquidation)
+- **🔄 Portfolio Sync**: Local DB holdings + live Hyperliquid account positions are merged and deduped in the dashboard
+- **🍞 Real-Time Toasts**: Server-side trades/start-stop events surface instantly in the UI via live toast polling
+- **🔒 AgentKit Tools**: Coinbase Developer Platform AgentKit remains available for onchain workflows
 
 ## 📦 Installation
 
@@ -33,9 +34,6 @@ cp .env.example .env
 # EigenAI API Key (for AI processing)
 EIGENAI_API_KEY=your_openai_api_key_here
 
-# Perplexity API key for web-based token address verification
-PERPLEXITY_API_KEY=your_perplexity_api_key_here
-
 # Coinbase Developer Platform credentials
 CDP_API_KEY_ID=your_cdp_api_key_id
 CDP_API_KEY_SECRET=your_cdp_api_key_secret
@@ -49,6 +47,15 @@ BASE_MAINNET_RPC_URL=https://mainnet.base.org
 BASE_TESTNET_RPC_URL=https://sepolia.base.org
 ETHEREUM_MAINNET_RPC_URL=https://ethereum-rpc.publicnode.com
 ETHEREUM_TESTNET_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+
+# Hyperliquid trading configuration
+HYPERLIQUID_PRIVATE_KEY=0xyour_hyperliquid_api_wallet_key
+HYPERLIQUID_ENVIRONMENT=testnet
+# Leave blank or "*" to allow every market, otherwise comma-separated tickers
+HYPERLIQUID_ALLOWED_MARKETS=
+HYPERLIQUID_SLIPPAGE_BPS=50
+HYPERLIQUID_TIME_IN_FORCE=Ioc
+MAX_TRADE_AMOUNT_USD=30
 
 # Trading configuration
 TWEET_MAX_AGE_HOURS=6
@@ -73,9 +80,10 @@ Visit [twitterapi.io](https://twitterapi.io)
 1. Visit [EigenCompute](https://docs.eigencloud.xyz/products/eigencompute/eigencompute-overview)
 2. Request access
 
-#### Perplexity API key
-1. Visit [perplexity.ai/account](https://www.perplexity.ai/account/api/keys)
-2. Create or log in to account and create API key
+#### Hyperliquid API wallet
+1. Visit the [Hyperliquid docs](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/nonces-and-api-wallets) to create an API wallet
+2. Generate a dedicated private key for API trading and fund it on Hyperliquid
+3. Store the private key in `HYPERLIQUID_PRIVATE_KEY` and choose `HYPERLIQUID_ENVIRONMENT` (e.g., `testnet` for paper trading)
 
 ## Docker
 
@@ -83,17 +91,17 @@ Build the image and run the dev server inside a container.
 
 ```bash
 # Build
-docker build -t pulse-agent:dev .
+docker build -t hypesignal:dev .
 
 # Run (exposes http://localhost:3000)
-docker run --rm -p 3000:3000 --env-file .env pulse-agent:dev
+docker run --rm -p 3000:3000 --env-file .env hypesignal:dev
 
 # Hot-reload (mount local code into the container)
 docker run --rm -it \
   -p 3000:3000 \
   --env-file .env \
   -v "$PWD":/app \
-  pulse-agent:dev
+  hypesignal:dev
 ```
 
 Notes:
@@ -125,7 +133,7 @@ Found Dockerfile in current directory.
 ? Enter image reference: [? for help] <image name>
 
 App name selection:
-? Enter app name: [? for help] (pulse-agent)
+? Enter app name: [? for help] (hypesignal)
 
 ? Do you want to view your app's logs?  [Use arrows to move, type to filter]
 > Yes, but only viewable by me
@@ -150,10 +158,14 @@ EIGENAI_API_KEY           <key>
 CDP_WALLET_SECRET         <secret>
 NETWORK_ENV               testnet
 ETHEREUM_MAINNET_RPC_URL  <url>
-PERPLEXITY_API_KEY        <key>
 CDP_API_KEY_ID            <id>
 CDP_API_KEY_SECRET        <secret>
 ETHEREUM_TESTNET_RPC_URL  <url>
+HYPERLIQUID_PRIVATE_KEY   <key>
+HYPERLIQUID_ENVIRONMENT   testnet
+HYPERLIQUID_ALLOWED_MARKETS (blank for all)
+HYPERLIQUID_SLIPPAGE_BPS  50
+MAX_TRADE_AMOUNT_USD      30
 IDEMPOTENCY_KEY           your_unique_idempotency_key
 BASE_MAINNET_RPC_URL      <url>
 TWEET_MAX_AGE_HOURS       6
@@ -161,9 +173,9 @@ TWEET_MAX_AGE_HOURS       6
 ? Is this categorization correct? Public variables will be in plaintext onchain. Private variables will be encrypted onchain. (y/N) y
 
 Deploying new app...
-App saved with name: pulse-agent
+App saved with name: hypesignal
 
-App Name: pulse-agent
+App Name: hypesignal
 App ID: <id>
 Latest Release Time: <time>
 Status: Deploying
@@ -173,9 +185,9 @@ Solana Address: <address>
 
 # Wait several seconds for deployment
 
-$ eigenx app info pulse-agent
+$ eigenx app info hypesignal
 
-App Name: pulse-agent
+App Name: hypesignal
 App ID: <id>
 Latest Release Time: <time>
 Status: Running
@@ -222,17 +234,17 @@ The agent monitors tweets from your custom list of top crypto traders and influe
 ### 3. Token Detection
 - Extracts token mentions from tweets ($BTC, #ethereum, etc.)
 - Supports major cryptocurrencies
-- Maps symbols to contract addresses and networks
+- Maps symbols to Hyperliquid markets using the SDK metadata
 
 ### 4. Automated Trading
-- Executes buy orders when positive sentiment + token mention is detected
-- Uses a percentage of wallet balance (max $100 per trade)
-- Records all positions in SQLite database
+- Places IOC limit buy orders on Hyperliquid when positive sentiment + token mention is detected
+- Uses the configured USD notional per trade (see `MAX_TRADE_AMOUNT_USD`)
+- Records fills and tweet context in SQLite
 
-### 5. 24-Hour Hold Strategy
-- Automatically sells positions after exactly 24 hours
-- Calculates profit/loss
-- Updates position status in database
+### 5. Position Tracking & Sync
+- Persists every fill with tweet context, influencer handle, and profile image
+- Merges Hyperliquid clearinghouse positions with the local DB to avoid duplicate buys
+- Keeps positions open until you decide to sell (manually via SDK or Hyperliquid UI)
 
 ## ⚙️ Configuration
 
@@ -241,23 +253,31 @@ Edit `config/trading.ts` to customize:
 
 ```typescript
 export const TRADING_CONFIG = {
-  // Maximum USD amount per trade
-  maxTradeAmountUSD: 100,
-
-  // Hold duration before selling
-  holdDurationHours: 24,
-
-  // Sentiment analysis threshold
-  positiveThreshold: 0.1,
-
-  // Influencers to monitor (add/remove as needed)
   influencers: [
     'blknoiz06',
     'trading_axe',
     'notthreadguy'
-  ]
+  ],
+  maxTradeAmountUSD: 30,
+  minimumConfidence: 70,
+  tweetMaxAgeHours: 6,
+  hyperliquid: {
+    enabled: true,
+    environment: 'testnet',
+    allowedMarkets: [], // empty = allow any listed market
+    slippageBps: 50,
+    timeInForce: 'Ioc',
+    symbolRouting: {
+      WETH: 'ETH',
+      ETH: 'ETH',
+      SOL: 'SOL',
+      BTC: 'BTC'
+    }
+  }
 };
 ```
+
+Tweak `allowedMarkets` to control which tickers can be traded—leave it empty (or set `HYPERLIQUID_ALLOWED_MARKETS=*` in `.env`) to allow every market—and extend `symbolRouting` when you want to translate tweet symbols into different Hyperliquid market names.
 
 ### Adding More Influencers
 1. Open `config/trading.ts`
@@ -278,7 +298,7 @@ The agent uses SQLite to track:
 ### Positions Table
 - `id` - Unique position identifier
 - `token` - Token symbol (BTC, ETH, etc.)
-- `amount` - Amount traded in ETH
+- `amount` - Filled size in base asset units
 - `purchase_price` - Price when bought
 - `purchase_time` - Timestamp of purchase
 - `sell_time` - Timestamp of sale (if sold)
@@ -286,6 +306,7 @@ The agent uses SQLite to track:
 - `profit` - Calculated profit/loss
 - `tweet` - Original tweet content
 - `influencer` - Influencer who posted
+- `profile_image_url` - Cached profile image for UI rendering
 - `status` - holding/sold/failed
 
 ### Processed Tweets Table

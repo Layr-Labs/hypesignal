@@ -173,13 +173,13 @@
   }
 
   /* Subtle pulse animation for background elements */
-  @keyframes backgroundPulse {
+  @keyframes backgroundSignal {
     0%, 100% { opacity: 0.02; }
     50% { opacity: 0.05; }
   }
 
   .pulse-bg {
-    animation: backgroundPulse 8s infinite ease-in-out;
+    animation: backgroundSignal 8s infinite ease-in-out;
   }
 
   /* Slow pulse animation for gradient orbs */
@@ -190,6 +190,15 @@
 
   .animate-pulse-slow {
     animation: pulse-slow 4s infinite ease-in-out;
+  }
+
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .animate-spin-slow {
+    animation: spin-slow 6s linear infinite;
   }
 
   /* Shine animation for the AI badge */

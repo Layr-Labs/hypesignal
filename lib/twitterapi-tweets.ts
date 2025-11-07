@@ -308,7 +308,8 @@ export class TwitterApiMonitoringService {
               token,
               tweet: tweet.text,
               influencer: username,
-              tweetId: tweet.id
+              tweetId: tweet.id,
+              profileImageUrl: tweet.author?.profilePicture
             });
 
             console.log(`🔍 [TWEET_PROC] ✅ Trade executed successfully for ${token}`);

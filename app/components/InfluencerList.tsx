@@ -247,10 +247,6 @@ export default function InfluencerList() {
               <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
               <span>{influencers.filter(i => i.verified).length} Verified</span>
             </span>
-            <span className="flex items-center space-x-1">
-              <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-              <span>{influencers.filter(i => i.error).length} Fallback</span>
-            </span>
           </div>
           <div className="text-xs text-muted-foreground">
             Last updated: {new Date().toLocaleTimeString()}

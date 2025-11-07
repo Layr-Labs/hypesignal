@@ -2,34 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useToast } from './Toast';
-
-interface TradingStatus {
-  isRunning: boolean;
-  mode: 'streaming' | 'polling' | 'stopped';
-  positions: {
-    totalPositions: number;
-    totalValue: number;
-    positions: Array<{
-      id: string;
-      token: string;
-      influencer: string;
-      purchaseTime: string;
-      amount: number;
-      hoursHeld: number;
-      hoursRemaining: number;
-    }>;
-  };
-  actionableTweets: Array<{
-    id: string;
-    token: string;
-    tweet: string;
-    influencer: string;
-    purchaseTime: string;
-    amount: number;
-    status: string;
-  }>;
-  startTime: string | null;
-}
+import type { TradingStatus } from '@/types/tradingStatus';
 
 const PlayIcon = () => (
   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -77,8 +50,12 @@ const TwitterIcon = () => (
 const TRADING_STATE_KEY = 'trading-agent-state';
 const USER_STOPPED_KEY = 'user-explicitly-stopped';
 
-export default function TradingControls() {
-  const [status, setStatus] = useState<TradingStatus | null>(null);
+interface TradingControlsProps {
+  initialStatus?: TradingStatus | null;
+}
+
+export default function TradingControls({ initialStatus = null }: TradingControlsProps) {
+  const [status, setStatus] = useState<TradingStatus | null>(initialStatus);
   const [loading, setLoading] = useState(false);
   const [userExplicitlyStopped, setUserExplicitlyStopped] = useState(() => {
     // Initialize from localStorage if available
@@ -133,6 +110,10 @@ export default function TradingControls() {
       console.error('Error fetching status:', error);
     }
   };
+
+  useEffect(() => {
+    setStatus(initialStatus);
+  }, [initialStatus]);
 
   useEffect(() => {
     // Initial load - validate persisted state against server reality
@@ -361,16 +342,45 @@ export default function TradingControls() {
           <p className="text-sm text-muted-foreground mt-1">Active positions</p>
         </div>
 
-        {/* Total Value */}
+        {/* Portfolio Prices */}
         <div className="card p-6 border-gray-800 status-card-accent">
           <div className="flex items-center justify-between mb-4">
-            <span className="font-semibold text-card-foreground">Portfolio Value</span>
+            <span className="font-semibold text-card-foreground">Portfolio Prices</span>
             <WalletIcon />
           </div>
-          <div className="text-3xl font-bold text-green-600">
-            {status?.positions?.totalValue?.toFixed(4) ?? '0.0000'}
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">ETH</p>
+          {status?.positions?.positions?.length ? (
+            <div className="space-y-3">
+              {status.positions.positions.map(position => {
+                const amount = Number(position.amount ?? 0);
+                const amountLabel = `${amount < 0 ? '-' : ''}${Math.abs(amount).toFixed(4)} ${position.token}`;
+                return (
+                  <div key={position.id} className="flex items-center justify-between text-sm">
+                    <div>
+                      <div className="font-semibold text-card-foreground flex items-center gap-2">
+                        {position.token}
+                        {position.source === 'synced' && (
+                          <span className="text-[9px] uppercase tracking-wide text-blue-400 ">
+                            Exising position
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {amountLabel}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold text-green-600">
+                        {position.marketPriceUsd !== null ? `$${position.marketPriceUsd.toFixed(2)}` : 'Price unavailable'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">USD</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No active positions</p>
+          )}
         </div>
       </div>
 
@@ -396,29 +406,31 @@ export default function TradingControls() {
                         <div className="font-sans text-lg font-bold text-gray-600 dark:text-gray-300">
                           {position.token}
                         </div>
-                        <div className="px-2 py-1 rounded-md bg-muted text-muted-foreground text-sm">
-                          @{position.influencer}
-                        </div>
+                        {position.source === 'synced' ? (
+                          <div className="px-2 py-1 rounded-md bg-blue-500/10 text-blue-300 text-[9px] border border-blue-400/30 uppercase tracking-wide">
+                            Existing position
+                          </div>
+                        ) : (
+                          <div className="px-2 py-1 rounded-md bg-muted text-muted-foreground text-sm">
+                            @{position.influencer}
+                          </div>
+                        )}
                       </div>
                       <div className="text-lg font-semibold">
-                        {position.amount.toFixed(4)} ETH
+                        {`${position.amount < 0 ? '-' : ''}${Math.abs(position.amount).toFixed(4)} ${position.token}`}
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-6 text-sm">
-                      <div className="flex items-center space-x-2">
-                        <ClockIcon />
-                        <span className="text-muted-foreground">
-                          Held: {position.hoursHeld.toFixed(1)}h
-                        </span>
+                    {position.source !== 'synced' && (
+                      <div className="flex items-center space-x-6 text-sm">
+                        <div className="flex items-center space-x-2">
+                          <ClockIcon />
+                          <span className="text-muted-foreground">
+                            Held: {position.hoursHeld !== null && position.hoursHeld !== undefined ? `${position.hoursHeld.toFixed(1)}h` : '--'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <ClockIcon />
-                        <span className="text-amber-600 font-medium">
-                          Sell in: {position.hoursRemaining.toFixed(1)}h
-                        </span>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -459,8 +471,17 @@ export default function TradingControls() {
                   {/* Tweet Header */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
-                        <TwitterIcon />
+                      <div className="w-10 h-10 rounded-full overflow-hidden border border-border bg-muted flex items-center justify-center">
+                        {actionableTweet.profileImageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={actionableTweet.profileImageUrl}
+                            alt={`@${actionableTweet.influencer}`}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <TwitterIcon />
+                        )}
                       </div>
                       <div>
                         <div className="font-semibold text-blue-400">
