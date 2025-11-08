@@ -29,7 +29,7 @@ export default async function Home() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
+    <div className="max-w-7xl mx-auto space-y-8 relative">
       {/* Influencer Monitoring Section */}
       <div className="animate-slide-up" style={{ animationDelay: '100ms' }}>
         <InfluencerList />
@@ -39,6 +39,7 @@ export default async function Home() {
       <div className="animate-slide-up" style={{ animationDelay: '200ms' }}>
         <TradingControls initialStatus={initialStatus} />
       </div>
+
     </div>
   );
 }

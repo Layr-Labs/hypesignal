@@ -26,7 +26,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className="min-h-screen flex flex-col">
+      <body className="relative overflow-hidden">
+        <div className="h-screen flex flex-col overflow-y-auto">
         {/* Sleek gradient background */}
         <div className="fixed inset-0 -z-10">
           <div className="absolute inset-0 bg-background" />
@@ -61,7 +62,7 @@ export default function RootLayout({
 
         {/* Header */}
         <ToastProvider>
-        <header className="fixed top-0 left-0 right-0 z-50">
+        <header className="sticky top-0 left-0 right-0 z-50">
           <div className="w-full max-w-7xl mx-auto px-6 py-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
@@ -170,6 +171,7 @@ export default function RootLayout({
           </div>
         </footer>
         </ToastProvider>
+        </div>
       </body>
     </html>
   );

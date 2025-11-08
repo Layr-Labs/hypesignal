@@ -23,6 +23,7 @@ interface ToastContextType {
   addToast: (toast: Omit<ToastData, 'id'>) => void;
   removeToast: (id: string) => void;
   checkForNewToasts: () => Promise<void>;
+  toasts: ToastData[];
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -108,7 +109,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
   };
 
   return (
-    <ToastContext.Provider value={{ addToast, removeToast, checkForNewToasts }}>
+    <ToastContext.Provider value={{ addToast, removeToast, checkForNewToasts, toasts }}>
       {children}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </ToastContext.Provider>

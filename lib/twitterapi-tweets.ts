@@ -2,6 +2,7 @@ import { TRADING_CONFIG } from '@/config/trading';
 import { analyzeTweetSentiment, extractTokenMentions, shouldTrade } from './sentiment';
 import { database } from './database';
 import { executeTrade } from './trading';
+import { TweetStream } from './tweetStream';
 
 interface TwitterApiTweet {
   type: string;
@@ -151,12 +152,18 @@ export class TwitterApiMonitoringService {
 
         console.log(`🔍 [TWITTER_API] Found ${tweets.length} tweets for @${username}`);
 
-        // Process only the first 5 tweets as requested
-        const tweetsToProcess = tweets.slice(0, 5);
-        console.log(`🔍 [TWITTER_API] Processing first 5 tweets for @${username}`);
+        const tweetsToProcess = tweets;
+        console.log(`🔍 [TWITTER_API] Processing ${tweetsToProcess.length} tweets for @${username}`);
 
         for (const tweet of tweetsToProcess) {
           console.log(`🔍 [TWITTER_API] --- Processing tweet ${tweet.id} ---`);
+
+          TweetStream.add({
+            id: tweet.id,
+            influencer: username,
+            tweet: tweet.text,
+            createdAt: tweet.createdAt
+          });
 
           // Calculate tweet age
           const tweetAge = Date.now() - new Date(tweet.createdAt).getTime();
@@ -177,9 +184,9 @@ export class TwitterApiMonitoringService {
 
           console.log(`🔍 [TWITTER_API]    ✅ Tweet age OK (${ageHours}h ago)`);
 
-          // Skip replies as they're less likely to contain trading signals
-          if (tweet.isReply) {
-            console.log(`🔍 [TWITTER_API]    💬 Skipping - is a reply`);
+          if (this.isPhotoOnlyTweet(tweet.text)) {
+            console.log(`🔍 [TWITTER_API]    🖼️ Skipping - photo/link only tweet detected`);
+            await database.markTweetAsProcessed(tweet.id);
             continue;
           }
 
@@ -187,6 +194,11 @@ export class TwitterApiMonitoringService {
           const isProcessed = await database.isTweetProcessed(tweet.id);
           if (isProcessed) {
             console.log(`🔍 [TWITTER_API]    ✅ Skipping - already processed`);
+            continue;
+          }
+
+          if (tweet.isReply) {
+            console.log(`🔍 [TWITTER_API]    💬 Keeping for stream only - reply detected`);
             continue;
           }
 
@@ -208,6 +220,13 @@ export class TwitterApiMonitoringService {
     }
 
     console.log('🔍 [TWITTER_API] ===== RECENT TWEETS CHECK COMPLETE =====');
+  }
+
+  private isPhotoOnlyTweet(text: string): boolean {
+    const trimmed = text.trim();
+    if (!trimmed) return true;
+    const replaced = trimmed.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, '');
+    return replaced.length === 0;
   }
 
   private async fetchUserTweets(username: string): Promise<TwitterApiTweet[]> {
@@ -240,8 +259,11 @@ export class TwitterApiMonitoringService {
         return [];
       }
 
-      const tweets = data.data.tweets;
-      console.log(`🔍 [TWITTER_API] Successfully fetched ${tweets.length} tweets for @${username}`);
+      const tweets = data.data.tweets.filter(tweet => {
+        const isRetweet = tweet.type?.toLowerCase?.() === 'retweet' || tweet.text.trim().startsWith('RT ');
+        return !isRetweet;
+      });
+      console.log(`🔍 [TWITTER_API] Successfully fetched ${tweets.length} original tweets for @${username}`);
 
       // Log first tweet for debugging
       if (tweets.length > 0) {

@@ -572,4 +572,53 @@
   .animate-confetti {
     animation: confetti-fall 3s linear forwards;
   }
+
+  @keyframes matrixScan {
+    0% { transform: translateY(-100%); opacity: 0; }
+    50% { opacity: 0.2; }
+    100% { transform: translateY(100%); opacity: 0; }
+  }
+
+  .matrix-scan::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      rgba(255,255,255,0.12) 50%,
+      transparent 100%
+    );
+    animation: matrixScan 4s linear infinite;
+  }
+
+  @keyframes matrixLine {
+    0% { opacity: 0; transform: translateY(8px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  .matrix-line {
+    animation: matrixLine 0.75s ease forwards;
+  }
+
+  @keyframes jiggle {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(1deg); }
+    75% { transform: rotate(-1deg); }
+  }
+
+  .jiggle {
+    animation: jiggle 0.6s ease-in-out;
+  }
+
+  @keyframes tradePop {
+    0% { transform: translateY(0); }
+    30% { transform: translateY(-6px); }
+    60% { transform: translateY(4px); }
+    100% { transform: translateY(0); }
+  }
+
+  .trade-pop {
+    animation: tradePop 0.8s ease-in-out;
+  }
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { TRADING_CONFIG } from "@/config/trading";
+import { useToast } from "./Toast";
 
 interface InfluencerProfile {
   username: string;
@@ -29,9 +30,16 @@ interface InfluencerProfile {
 /**
  * Beautiful influencer list component showing who we're monitoring
  */
-export default function InfluencerList() {
+interface InfluencerListProps {}
+
+export default function InfluencerList({}: InfluencerListProps) {
   const [influencers, setInfluencers] = useState<InfluencerProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const { toasts } = useToast();
+  const [highlightMap, setHighlightMap] = useState<Record<string, number>>({});
+  const [tradeCounts, setTradeCounts] = useState<Record<string, number>>({});
+  const processedToastIds = useRef<Set<string>>(new Set());
+  const baseOrderRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     // Fetch real influencer profiles from Twitter API
@@ -92,6 +100,11 @@ export default function InfluencerList() {
         const profiles = await Promise.all(profilePromises);
         console.log('🐦 [INFLUENCER_LIST] All profiles fetched:', profiles);
 
+        const baseOrder: Record<string, number> = {};
+        profiles.forEach((profile, idx) => {
+          baseOrder[profile.username.toLowerCase()] = idx;
+        });
+        baseOrderRef.current = baseOrder;
         setInfluencers(profiles);
       } catch (error) {
         console.error('❌ [INFLUENCER_LIST] Error fetching influencer profiles:', error);
@@ -102,6 +115,57 @@ export default function InfluencerList() {
 
     fetchInfluencerProfiles();
   }, []);
+
+  useEffect(() => {
+    if (!toasts.length) return;
+    const newTradeToasts = toasts.filter(toast => toast.type === 'trade-buy' && toast.data?.influencer)
+      .filter(toast => !processedToastIds.current.has(toast.id));
+
+    if (!newTradeToasts.length) return;
+
+    const timestamp = Date.now();
+    setHighlightMap(prev => {
+      const updated = { ...prev };
+      newTradeToasts.forEach(toast => {
+        processedToastIds.current.add(toast.id);
+        const key = toast.data?.influencer?.toLowerCase();
+        if (!key) return;
+        const entryStamp = timestamp + Math.random();
+        updated[key] = entryStamp;
+        setTimeout(() => {
+          setHighlightMap(current => {
+            if (current[key] !== entryStamp) return current;
+            const clone = { ...current };
+            delete clone[key];
+            return clone;
+          });
+        }, 1200);
+      });
+      return updated;
+    });
+
+    setTradeCounts(prev => {
+      const updated = { ...prev };
+      newTradeToasts.forEach(toast => {
+        const key = toast.data?.influencer?.toLowerCase();
+        if (!key) return;
+        updated[key] = (updated[key] ?? 0) + 1;
+      });
+      return updated;
+    });
+  }, [toasts]);
+
+  const sortedInfluencers = useMemo(() => {
+    const baseOrder = baseOrderRef.current;
+    return [...influencers].sort((a, b) => {
+      const aKey = a.username.toLowerCase();
+      const bKey = b.username.toLowerCase();
+      const aCount = tradeCounts[aKey] ?? 0;
+      const bCount = tradeCounts[bKey] ?? 0;
+      if (aCount !== bCount) return bCount - aCount;
+      return (baseOrder[aKey] ?? 0) - (baseOrder[bKey] ?? 0);
+    });
+  }, [influencers, tradeCounts]);
 
   if (loading) {
     return (
@@ -143,10 +207,14 @@ export default function InfluencerList() {
 
       {/* Influencer Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {influencers.map((influencer, index) => (
+        {sortedInfluencers.map((influencer, index) => {
+          const highlightKey = influencer.username.toLowerCase();
+          const isHighlighted = Boolean(highlightMap[highlightKey]);
+          const leaderCount = tradeCounts[highlightKey] ?? 0;
+          return (
           <div
             key={influencer.username}
-            className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-muted/20 to-muted/5 border border-border/50 hover:border-border transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer"
+            className={`group relative overflow-hidden rounded-xl bg-gradient-to-br from-muted/20 to-muted/5 border border-border/50 hover:border-border transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer ${isHighlighted ? 'ring-2 ring-emerald-400 shadow-emerald-500/40 animate-pulse trade-pop' : ''}`}
             style={{ animationDelay: `${index * 100}ms` }}
             title={!influencer.error && influencer.description ? `${influencer.displayName}: ${influencer.description.substring(0, 100)}...` : `Click to open @${influencer.username} on Twitter`}
             onClick={() => window.open(`https://twitter.com/${influencer.username}`, '_blank')}
@@ -188,12 +256,15 @@ export default function InfluencerList() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-1">
                     <h4 className="font-medium text-foreground text-sm truncate">
-                      {influencer.displayName}
+                      {influencer.displayName && influencer.displayName.length >= 2 ? influencer.displayName : influencer.username}
                     </h4>
                     {influencer.verified && (
                       <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                       </svg>
+                    )}
+                    {leaderCount > 0 && (
+                      <span className="ml-1 text-[10px] font-semibold text-emerald-400">{leaderCount} trade{leaderCount === 1 ? '' : 's'}</span>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground truncate">
@@ -232,7 +303,7 @@ export default function InfluencerList() {
             {/* Hover Effect Border */}
             <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-500/0 via-purple-500/0 to-emerald-500/0 group-hover:from-blue-500/20 group-hover:via-purple-500/10 group-hover:to-emerald-500/20 transition-all duration-500 pointer-events-none"></div>
           </div>
-        ))}
+        )})}
       </div>
 
       {/* Footer Stats */}

@@ -21,12 +21,12 @@ const baseInfluencers = [
   'blknoiz06',
   'dabit3',
   'trading_axe',
+  'CryptoHayes',
   'notthreadguy',
   'gwartygwart',
   'tradermayne',
   'loomdart',
-  'CryptoHayes',
-  'divine_economy'
+  'divine_economy',
 ];
 
 const defaultMaxTradeUsd = parseNumberEnv(process.env.MAX_TRADE_AMOUNT_USD, 30);

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useToast } from './Toast';
 import type { TradingStatus } from '@/types/tradingStatus';
+import type { ToastData } from './Toast';
+import TweetMatrix from './TweetMatrix';
 
 const PlayIcon = () => (
   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -288,6 +290,11 @@ export default function TradingControls({ initialStatus = null }: TradingControl
         </div>
       </div>
 
+      <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px),1fr]">
+        <div className="order-2 lg:order-1">
+          <TweetMatrix />
+        </div>
+        <div className="space-y-8 order-1 lg:order-2">
       {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
         {/* Agent Status */}
@@ -529,7 +536,7 @@ export default function TradingControls({ initialStatus = null }: TradingControl
       )}
 
       {/* Warning for Polling Mode */}
-      {status?.mode === 'polling' && (
+      {/* {status?.mode === 'polling' && (
         <div className="card p-6 border-amber-300/50 bg-amber-50/80 dark:border-amber-700/50 dark:bg-amber-900/20">
           <div className="flex items-start space-x-4">
             <div className="w-5 h-5 text-amber-600 mt-0.5">
@@ -560,7 +567,9 @@ export default function TradingControls({ initialStatus = null }: TradingControl
             </div>
           </div>
         </div>
-      )}
+      )} */}
+        </div>
+      </div>
     </div>
   );
 }
