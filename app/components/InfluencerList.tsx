@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { TRADING_CONFIG } from "@/config/trading";
 import { useToast } from "./Toast";
+import type { ToastData } from "./Toast";
 
 interface InfluencerProfile {
   username: string;
@@ -116,9 +117,17 @@ export default function InfluencerList({}: InfluencerListProps) {
     fetchInfluencerProfiles();
   }, []);
 
+  const isTradeTriggerToast = (toast: ToastData) => {
+    if (toast.type !== 'info') return false;
+    if (!toast.data?.influencer) return false;
+    const title = toast.title?.toLowerCase() ?? '';
+    return title.includes('executing hyperliquid order');
+  };
+
   useEffect(() => {
     if (!toasts.length) return;
-    const newTradeToasts = toasts.filter(toast => toast.type === 'trade-buy' && toast.data?.influencer)
+    const newTradeToasts = toasts
+      .filter(isTradeTriggerToast)
       .filter(toast => !processedToastIds.current.has(toast.id));
 
     if (!newTradeToasts.length) return;
